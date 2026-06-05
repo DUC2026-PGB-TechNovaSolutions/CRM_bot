@@ -28,6 +28,61 @@ LOGIN_SESSIONS = {}    # chat_id -> {...}
 USER_SESSIONS = {}     # chat_id -> user_id (logged in)
 DEP_SESSIONS = {}      # chat_id -> {...}
 WITHDRAW_SESSIONS = {} # chat_id -> {...}
+BUY_SESSIONS = {}      # chat_id -> {...}
+FORGOT_SESSIONS = {}   # chat_id -> {...}
+
+# Product Details with Khmer description, usage duration and local image path
+PRODUCTS_DETAILS = {
+    "skincare": {
+        "name": "Skincare (🧴 ផលិតផលថែរក្សាស្បែក)",
+        "price": 15.00,
+        "description": "ជួយផ្តល់សំណើមដល់ស្បែកមុខ ការពារភាពជ្រួញ និងជួយឱ្យផ្ទៃមុខស្រស់ថ្លា។",
+        "duration_days": 30,
+        "image_path": "products/skincare.png"
+    },
+    "face_foam": {
+        "name": "Face Foam (🧼 ហ្វូមលាងមុខ)",
+        "price": 8.00,
+        "description": "ហ្វូមលាងមុខកម្ចាត់ធូលីដី និងជាតិខ្លាញ់នៅលើស្បែកមុខយ៉ាងជ្រៅ ការពារមុន។",
+        "duration_days": 45,
+        "image_path": "products/face_foam.png"
+    },
+    "face_care_shampoo": {
+        "name": "Face Care Shampoo (🚿 សាប៊ូកក់សក់ថែរក្សាស្បែកមុខ)",
+        "price": 12.00,
+        "description": "សាប៊ូកក់សក់កម្ចាត់ជាតិប្រេង ថែរក្សាស្បែកក្បាល និងសក់ឱ្យមានសុខភាពល្អ។",
+        "duration_days": 60,
+        "image_path": "products/face_care_shampoo.png"
+    },
+    "scrub_skin": {
+        "name": "Scrub Skin (🧽 ស្ក្រាប់ខាត់ស្បែក)",
+        "price": 10.00,
+        "description": "ស្ក្រាប់ជម្រុះកោសិកាចាស់ៗ និងជួយឱ្យស្បែកទន់ម៉ដ្ឋរលោង។",
+        "duration_days": 90,
+        "image_path": "products/scrub_skin.png"
+    },
+    "face_mask": {
+        "name": "Face Mask (🎭 ម៉ាសបិទមុខ)",
+        "price": 5.00,
+        "description": "ម៉ាសបិទមុខជួយផ្តល់សារធាតុចិញ្ចឹម និងកាត់បន្ថយភាពហត់នឿយរបស់ស្បែកមុខ។",
+        "duration_days": 15,
+        "image_path": "products/face_mask.png"
+    },
+    "lip_mouth_care": {
+        "name": "Lip/Mouth Care (💋 ផលិតផលថែរក្សាបបូរមាត់)",
+        "price": 6.00,
+        "description": "ផលិតផលថែរក្សាបបូរមាត់ឱ្យមានសំណើម ការពារស្ងួត និងប្រេះ។",
+        "duration_days": 30,
+        "image_path": "products/lip_mouth_care.png"
+    },
+    "uv_protect": {
+        "name": "UV Protect (☀️ ឡេការពារកម្តៅថ្ងៃ)",
+        "price": 18.00,
+        "description": "ឡេការពារកម្តៅថ្ងៃ ការពារស្បែកពីកាំរស្មី UV យ៉ាងមានប្រសិទ្ធភាព។",
+        "duration_days": 60,
+        "image_path": "products/uv_protect.png"
+    }
+}
 
 # Helper: Get Admin Chat ID
 def get_admin_chat_id():
@@ -104,6 +159,78 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
+    # Create Purchases table
+    db_execute("""
+    CREATE TABLE IF NOT EXISTS purchases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        product_name TEXT,
+        price REAL,
+        status TEXT,
+        approved_at TIMESTAMP,
+        duration_days INTEGER,
+        alert_sent INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    
+    # Purchases table migrations (add columns if table already exists)
+    try:
+        db_execute("ALTER TABLE purchases ADD COLUMN approved_at TIMESTAMP")
+    except Exception:
+        pass
+    try:
+        db_execute("ALTER TABLE purchases ADD COLUMN duration_days INTEGER")
+    except Exception:
+        pass
+    try:
+        db_execute("ALTER TABLE purchases ADD COLUMN alert_sent INTEGER DEFAULT 0")
+    except Exception:
+        pass
+
+    # Seed Admin User if not exists
+    admin_exists = db_query_one("SELECT id FROM users WHERE account_number = '123456'")
+    if not admin_exists:
+        # Free up ID 1 if it is taken
+        id_1_taken = db_query_one("SELECT id FROM users WHERE id = 1")
+        if id_1_taken:
+            new_id = db_query_one("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM users")['next_id']
+            db_execute("UPDATE users SET id = ? WHERE id = 1", (new_id,))
+            db_execute("UPDATE deposits SET user_id = ? WHERE user_id = 1", (new_id,))
+            db_execute("UPDATE withdrawals SET user_id = ? WHERE user_id = 1", (new_id,))
+            db_execute("UPDATE purchases SET user_id = ? WHERE user_id = 1", (new_id,))
+        
+        # Insert admin user
+        db_execute(
+            """INSERT INTO users (id, account_number, name, phone, ref_code, referred_by, password, customer_type, balance)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (1, '123456', 'Netz (Admin)', '12345678', 'REF88888', None, '782005', 'admin', 10000.00)
+        )
+    else:
+        # If admin exists, ensure details are correct and ID is 1
+        current_admin = db_query_one("SELECT id FROM users WHERE account_number = '123456'")
+        if current_admin['id'] != 1:
+            # Free up ID 1 if it is taken
+            id_1_taken = db_query_one("SELECT id FROM users WHERE id = 1")
+            if id_1_taken:
+                new_id = db_query_one("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM users")['next_id']
+                db_execute("UPDATE users SET id = ? WHERE id = 1", (new_id,))
+                db_execute("UPDATE deposits SET user_id = ? WHERE user_id = 1", (new_id,))
+                db_execute("UPDATE withdrawals SET user_id = ? WHERE user_id = 1", (new_id,))
+                db_execute("UPDATE purchases SET user_id = ? WHERE user_id = 1", (new_id,))
+            
+            # Update admin's ID to 1
+            old_admin_id = current_admin['id']
+            db_execute("UPDATE users SET id = 1 WHERE id = ?", (old_admin_id,))
+            db_execute("UPDATE deposits SET user_id = 1 WHERE user_id = ?", (old_admin_id,))
+            db_execute("UPDATE withdrawals SET user_id = 1 WHERE user_id = ?", (old_admin_id,))
+            db_execute("UPDATE purchases SET user_id = 1 WHERE user_id = ?", (old_admin_id,))
+            
+        # Update admin account properties
+        db_execute(
+            "UPDATE users SET name = ?, phone = ?, password = ?, customer_type = ? WHERE id = 1",
+            ('Netz (Admin)', '12345678', '782005', 'admin')
+        )
 
 # Generate Unique 6-Digit Account Number
 def generate_account_number():
@@ -125,11 +252,17 @@ def generate_ref_code():
 def generate_password():
     return "".join(random.choices(string.digits, k=6))
 
-# Check if User is Logged In
+# Check if User is Logged In (check memory, then check DB)
 def get_logged_in_user(chat_id):
     user_id = USER_SESSIONS.get(chat_id)
     if user_id:
         return db_query_one("SELECT * FROM users WHERE id = ?", (user_id,))
+    
+    # Check database for telegram_id
+    user = db_query_one("SELECT * FROM users WHERE telegram_id = ?", (chat_id,))
+    if user:
+        USER_SESSIONS[chat_id] = user['id']
+        return user
     return None
 
 # ==========================================
@@ -139,7 +272,9 @@ def get_main_menu_markup():
     markup = types.InlineKeyboardMarkup(row_width=2)
     btn_login = types.InlineKeyboardButton("🔓 ចូលគណនី (Log In)", callback_data="menu_login")
     btn_register = types.InlineKeyboardButton("📝 បង្កើតគណនី (Register)", callback_data="menu_register")
+    btn_forgot = types.InlineKeyboardButton("🔑 ភ្លេចលេខសម្ងាត់ (Forgot Password)", callback_data="menu_forgot_pass")
     markup.add(btn_login, btn_register)
+    markup.add(btn_forgot)
     return markup
 
 def get_register_type_markup():
@@ -161,9 +296,24 @@ def get_dashboard_markup():
     markup = types.InlineKeyboardMarkup(row_width=2)
     btn_dep = types.InlineKeyboardButton("💵 ស្នើដាក់លុយ (Deposit)", callback_data="dash_deposit")
     btn_wd = types.InlineKeyboardButton("💸 ស្នើដកលុយ (Withdraw)", callback_data="dash_withdraw")
+    btn_shop = types.InlineKeyboardButton("🛍️ ទិញទំនិញ (Buy Products)", callback_data="dash_shop")
     btn_logout = types.InlineKeyboardButton("🚪 ចាកចេញ (Log Out)", callback_data="dash_logout")
     markup.add(btn_dep, btn_wd)
+    markup.add(btn_shop)
     markup.add(btn_logout)
+    return markup
+
+def get_shop_markup():
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    btn_skincare = types.InlineKeyboardButton("🧴 Skincare - $15.00", callback_data="buy_prod:skincare")
+    btn_foam = types.InlineKeyboardButton("🧼 Face Foam - $8.00", callback_data="buy_prod:face_foam")
+    btn_shampoo = types.InlineKeyboardButton("🚿 Face Care Shampoo - $12.00", callback_data="buy_prod:face_care_shampoo")
+    btn_scrub = types.InlineKeyboardButton("🧽 Scrub Skin - $10.00", callback_data="buy_prod:scrub_skin")
+    btn_mask = types.InlineKeyboardButton("🎭 Face Mask - $5.00", callback_data="buy_prod:face_mask")
+    btn_lip = types.InlineKeyboardButton("💋 Lip/Mouth Care - $6.00", callback_data="buy_prod:lip_mouth_care")
+    btn_uv = types.InlineKeyboardButton("☀️ UV Protect - $18.00", callback_data="buy_prod:uv_protect")
+    btn_back = types.InlineKeyboardButton("🔙 ត្រឡប់ក្រោយ (Back)", callback_data="shop_back")
+    markup.add(btn_skincare, btn_foam, btn_shampoo, btn_scrub, btn_mask, btn_lip, btn_uv, btn_back)
     return markup
 
 def get_cancel_markup():
@@ -184,6 +334,8 @@ def send_welcome(message):
     LOGIN_SESSIONS.pop(chat_id, None)
     DEP_SESSIONS.pop(chat_id, None)
     WITHDRAW_SESSIONS.pop(chat_id, None)
+    BUY_SESSIONS.pop(chat_id, None)
+    FORGOT_SESSIONS.pop(chat_id, None)
     
     # Check login session
     user = get_logged_in_user(chat_id)
@@ -205,6 +357,8 @@ def handle_cancel_command(message):
     LOGIN_SESSIONS.pop(chat_id, None)
     DEP_SESSIONS.pop(chat_id, None)
     WITHDRAW_SESSIONS.pop(chat_id, None)
+    BUY_SESSIONS.pop(chat_id, None)
+    FORGOT_SESSIONS.pop(chat_id, None)
     bot.send_message(chat_id, "🔄 ប្រតិបត្តិការត្រូវបានលុបចោល។", reply_markup=get_main_menu_markup())
 
 # ==========================================
@@ -235,6 +389,8 @@ def callback_handler(call):
         LOGIN_SESSIONS.pop(chat_id, None)
         DEP_SESSIONS.pop(chat_id, None)
         WITHDRAW_SESSIONS.pop(chat_id, None)
+        BUY_SESSIONS.pop(chat_id, None)
+        FORGOT_SESSIONS.pop(chat_id, None)
         
         user = get_logged_in_user(chat_id)
         if user:
@@ -279,8 +435,17 @@ def callback_handler(call):
         msg = bot.send_message(chat_id, "💳 សូមបញ្ចូល **លេខកូដអាខោន** (Account Number) របស់អ្នក៖", parse_mode="Markdown", reply_markup=get_cancel_markup())
         bot.register_next_step_handler(msg, process_login_acc)
 
+    # Forgot Password Start
+    elif data == "menu_forgot_pass" or data == "forgot_pass_start":
+        FORGOT_SESSIONS[chat_id] = {}
+        msg = bot.send_message(chat_id, "📱 សូមបញ្ចូល **លេខទូរស័ព្ទ** (Phone Number) ដែលបានចុះឈ្មោះ៖", parse_mode="Markdown", reply_markup=get_cancel_markup())
+        bot.register_next_step_handler(msg, process_forgot_phone)
+
     # Dashboard Logout
     elif data == "dash_logout":
+        user = get_logged_in_user(chat_id)
+        if user:
+            db_execute("UPDATE users SET telegram_id = NULL WHERE id = ?", (user['id'],))
         USER_SESSIONS.pop(chat_id, None)
         bot.send_message(chat_id, "🚪 អ្នកបានចាកចេញពីគណនីដោយជោគជ័យ។", reply_markup=get_main_menu_markup())
 
@@ -300,12 +465,92 @@ def callback_handler(call):
             msg = bot.send_message(chat_id, "🔐 ដើម្បីសុវត្ថិភាព សូមបញ្ចូល **លេខកូដសម្ងាត់** (Password) របស់អ្នក៖", parse_mode="Markdown", reply_markup=get_cancel_markup())
             bot.register_next_step_handler(msg, process_withdraw_pass_confirm)
 
+    # Dashboard Shop
+    elif data == "dash_shop":
+        user = get_logged_in_user(chat_id)
+        if user:
+            shop_text = (
+                "🛍️ **ហាងទំនិញ (Products Shop)**\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                f"👤 គណនី៖ **{user['name']}**\n"
+                f"💰 សមតុល្យទឹកប្រាក់៖ `${user['balance']:.2f}`\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "សូមជ្រើសរើសផលិតផលខាងក្រោមដើម្បីទិញ៖"
+            )
+            try:
+                bot.edit_message_text(shop_text, chat_id, call.message.message_id, parse_mode="Markdown", reply_markup=get_shop_markup())
+            except Exception:
+                bot.send_message(chat_id, shop_text, parse_mode="Markdown", reply_markup=get_shop_markup())
+        else:
+            bot.send_message(chat_id, "❌ សូមចូលគណនីជាមុនសិន!", reply_markup=get_main_menu_markup())
+
+    # Shop Back to Dashboard
+    elif data == "shop_back":
+        user = get_logged_in_user(chat_id)
+        if user:
+            try:
+                bot.delete_message(chat_id, call.message.message_id)
+            except Exception:
+                pass
+            send_dashboard(chat_id, user)
+        else:
+            bot.send_message(chat_id, "👋 សូមចូលគណនីជាមុនសិន។", reply_markup=get_main_menu_markup())
+
+    # Buy Product trigger
+    elif data.startswith("buy_prod:"):
+        parts = data.split(":")
+        prod_key = parts[1]
+        user = get_logged_in_user(chat_id)
+        if not user:
+            bot.send_message(chat_id, "❌ សូមចូលគណនីជាមុនសិន!", reply_markup=get_main_menu_markup())
+            return
+            
+        prod_info = PRODUCTS_DETAILS.get(prod_key)
+        if not prod_info:
+            bot.send_message(chat_id, "❌ ផលិតផលរកមិនឃើញឡើយ។")
+            return
+            
+        prod_name = prod_info["name"]
+        prod_price = prod_info["price"]
+            
+        if user['balance'] < prod_price:
+            fail_markup = types.InlineKeyboardMarkup()
+            btn_dep = types.InlineKeyboardButton("💵 ស្នើដាក់លុយ (Deposit)", callback_data="dash_deposit")
+            btn_back = types.InlineKeyboardButton("🔙 ត្រឡប់ក្រោយ", callback_data="dash_shop")
+            fail_markup.add(btn_dep, btn_back)
+            bot.send_message(
+                chat_id, 
+                f"❌ **សមតុល្យមិនគ្រប់គ្រាន់ទេ!**\n"
+                f"• សមតុល្យបច្ចុប្បន្ន៖ `${user['balance']:.2f}`\n"
+                f"• តម្លៃផលិតផល៖ `${prod_price:.2f}`\n"
+                f"⚠️ សូមធ្វើការដាក់លុយជាមុនសិន។", 
+                parse_mode="Markdown", 
+                reply_markup=fail_markup
+            )
+            return
+            
+        BUY_SESSIONS[chat_id] = {
+            "product_name": prod_name,
+            "price": prod_price,
+            "product_key": prod_key
+        }
+        msg = bot.send_message(
+            chat_id, 
+            f"🔐 ដើម្បីសុវត្ថិភាព សូមបញ្ចូល **លេខកូដសម្ងាត់** (Password) របស់អ្នក ដើម្បីបញ្ជាក់ការទិញ **{prod_name}** (${prod_price:.2f})៖", 
+            parse_mode="Markdown", 
+            reply_markup=get_cancel_markup()
+        )
+        bot.register_next_step_handler(msg, process_purchase_pass_confirm)
+
     # Admin Callback Actions
     elif data.startswith("admin_dep_approve:") or data.startswith("admin_dep_reject:"):
         handle_admin_deposit_decision(call)
         
     elif data.startswith("admin_wd_approve:") or data.startswith("admin_wd_reject:"):
         handle_admin_withdraw_decision(call)
+
+    elif data.startswith("admin_pur_approve:") or data.startswith("admin_pur_reject:"):
+        handle_admin_purchase_decision(call)
 
 # ==========================================
 # Registration Step Handlers
@@ -389,7 +634,7 @@ def complete_registration(chat_id):
     user_id = db_execute(
         """INSERT INTO users (account_number, name, phone, ref_code, referred_by, password, customer_type, telegram_id) 
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (account_number, name, phone, ref_code, referred_by, password, customer_type, chat_id)
+        (account_number, name, phone, ref_code, referred_by, password, customer_type, None)
     )
 
     # Process Referral Bonus ($1.00 for referrer)
@@ -470,12 +715,18 @@ def process_login_pass(message):
     user = db_query_one("SELECT * FROM users WHERE account_number = ? AND password = ?", (acc_num, password))
     
     if user:
-        USER_SESSIONS[chat_id] = user['id']
-        bot.send_message(chat_id, "✅ **ចូលគណនីបានជោគជ័យ!**", parse_mode="Markdown")
-        send_dashboard(chat_id, user)
+        # Clear this telegram_id from any other accounts to maintain uniqueness
+        db_execute("UPDATE users SET telegram_id = NULL WHERE telegram_id = ? AND id != ?", (chat_id, user['id']))
         # Update telegram_id if it changed
         if user['telegram_id'] != chat_id:
             db_execute("UPDATE users SET telegram_id = ? WHERE id = ?", (chat_id, user['id']))
+            
+        USER_SESSIONS[chat_id] = user['id']
+        bot.send_message(chat_id, "✅ **ចូលគណនីបានជោគជ័យ!**", parse_mode="Markdown")
+        
+        # Refresh user dict to get updated telegram_id
+        user = db_query_one("SELECT * FROM users WHERE id = ?", (user['id'],))
+        send_dashboard(chat_id, user)
     else:
         fail_markup = types.InlineKeyboardMarkup()
         btn_retry = types.InlineKeyboardButton("🔓 ព្យាយាមម្ដងទៀត", callback_data="login_start")
@@ -484,6 +735,44 @@ def process_login_pass(message):
         bot.send_message(chat_id, "❌ **លេខកូដអាខោន ឬលេខសម្ងាត់មិនត្រឹមត្រូវទេ!**", parse_mode="Markdown", reply_markup=fail_markup)
 
     LOGIN_SESSIONS.pop(chat_id, None)
+
+def process_forgot_phone(message):
+    chat_id = message.chat.id
+    if message.text and (message.text.startswith('/') or message.text == "❌ លុបចោល (Cancel)"):
+        return
+    if chat_id not in FORGOT_SESSIONS:
+        return
+
+    phone = message.text.strip()
+    user = db_query_one("SELECT * FROM users WHERE phone = ?", (phone,))
+    
+    if user:
+        new_password = generate_password()
+        db_execute("UPDATE users SET password = ? WHERE id = ?", (new_password, user['id']))
+        
+        success_text = (
+            "🔑 **ការផ្លាស់ប្តូរលេខសម្ងាត់ថ្មីបានជោគជ័យ!**\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            f"👤 ឈ្មោះ៖ **{user['name']}**\n"
+            f"💳 **លេខកូដអាខោន៖** `{user['account_number']}`\n"
+            f"🔑 **លេខកូដសម្ងាត់ថ្មី៖** `{new_password}`\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "⚠️ *សូមរក្សាទុកលេខសម្ងាត់ថ្មីនេះឱ្យបានល្អសម្រាប់ចូលប្រើប្រាស់។*"
+        )
+        
+        markup = types.InlineKeyboardMarkup()
+        btn_login = types.InlineKeyboardButton("🔓 ចូលគណនី (Log In)", callback_data="login_start")
+        markup.add(btn_login)
+        
+        bot.send_message(chat_id, success_text, parse_mode="Markdown", reply_markup=markup)
+    else:
+        fail_markup = types.InlineKeyboardMarkup()
+        btn_retry = types.InlineKeyboardButton("🔄 ព្យាយាមម្ដងទៀត", callback_data="forgot_pass_start")
+        btn_home = types.InlineKeyboardButton("🏠 ត្រឡប់ទៅទំព័រដើម", callback_data="go_home")
+        fail_markup.add(btn_retry, btn_home)
+        bot.send_message(chat_id, "❌ **រកមិនឃើញលេខទូរស័ព្ទនេះក្នុងប្រព័ន្ធឡើយ!**", parse_mode="Markdown", reply_markup=fail_markup)
+
+    FORGOT_SESSIONS.pop(chat_id, None)
 
 # ==========================================
 # Dashboard View Generator
@@ -744,6 +1033,74 @@ def process_withdraw_khqr(message):
         msg = bot.send_message(chat_id, "⚠️ **មិនមែនជារូបភាពទេ!** សូមផ្ញើរូបភាព KHQR របស់អ្នក៖", parse_mode="Markdown", reply_markup=get_cancel_markup())
         bot.register_next_step_handler(msg, process_withdraw_khqr)
 
+def process_purchase_pass_confirm(message):
+    chat_id = message.chat.id
+    if message.text and (message.text.startswith('/') or message.text == "❌ លុបចោល (Cancel)"):
+        return
+    user = get_logged_in_user(chat_id)
+    if not user or chat_id not in BUY_SESSIONS:
+        return
+
+    password = message.text.strip()
+    if password == user['password']:
+        session = BUY_SESSIONS[chat_id]
+        prod_name = session['product_name']
+        price = session['price']
+        
+        # Check balance again
+        user = db_query_one("SELECT * FROM users WHERE id = ?", (user['id'],))
+        if user['balance'] < price:
+            bot.send_message(chat_id, "❌ **សមតុល្យមិនគ្រប់គ្រាន់ទេ!**", parse_mode="Markdown")
+            BUY_SESSIONS.pop(chat_id, None)
+            send_dashboard(chat_id, user)
+            return
+
+        # Deduct balance
+        new_balance = user['balance'] - price
+        db_execute("UPDATE users SET balance = ? WHERE id = ?", (new_balance, user['id']))
+        
+        # Insert Purchase
+        purchase_id = db_execute(
+            "INSERT INTO purchases (user_id, product_name, price, status) VALUES (?, ?, ?, 'pending')",
+            (user['id'], prod_name, price)
+        )
+
+        bot.send_message(chat_id, f"📥 **ការបញ្ជាទិញ {prod_name} ទទួលបានជោគជ័យ!**\nសំណើរបស់អ្នកកំពុងស្ថិតក្នុងការត្រួតពិនិត្យពី Admin។", parse_mode="Markdown")
+        
+        # Notify Admin
+        admin_chat_id = get_admin_chat_id()
+        if admin_chat_id:
+            try:
+                admin_text = (
+                    "🚨 **សំណើទិញទំនិញថ្មី! (New Purchase Request)**\n"
+                    "━━━━━━━━━━━━━━━━━━\n"
+                    f"👤 ឈ្មោះ៖ **{user['name']}** (ID: `{user['id']}`)\n"
+                    f"💳 លេខគណនី៖ `{user['account_number']}`\n"
+                    f"🛍️ ផលិតផល៖ **{prod_name}**\n"
+                    f"💰 តម្លៃ៖ **${price:.2f}**\n"
+                    "━━━━━━━━━━━━━━━━━━"
+                )
+                
+                admin_markup = types.InlineKeyboardMarkup(row_width=2)
+                btn_approve = types.InlineKeyboardButton("យល់ព្រម Approve ✅", callback_data=f"admin_pur_approve:{purchase_id}")
+                btn_reject = types.InlineKeyboardButton("បដិសេធ Reject ❌", callback_data=f"admin_pur_reject:{purchase_id}")
+                admin_markup.add(btn_approve, btn_reject)
+
+                bot.send_message(admin_chat_id, admin_text, parse_mode="Markdown", reply_markup=admin_markup)
+            except Exception as e:
+                print(f"Error notifying admin of purchase: {e}")
+        else:
+            print("Warning: ADMIN_CHAT_ID is not configured or invalid.")
+
+        BUY_SESSIONS.pop(chat_id, None)
+        # Refresh user data for dashboard
+        user = db_query_one("SELECT * FROM users WHERE id = ?", (user['id'],))
+        send_dashboard(chat_id, user)
+    else:
+        bot.send_message(chat_id, "❌ **លេខសម្ងាត់មិនត្រឹមត្រូវទេ!** ការបញ្ជាទិញត្រូវបានលុបចោល។", parse_mode="Markdown")
+        BUY_SESSIONS.pop(chat_id, None)
+        send_dashboard(chat_id, user)
+
 # ==========================================
 # Admin Decision Handler (Deposits)
 # ==========================================
@@ -888,6 +1245,15 @@ def handle_admin_withdraw_decision(call):
         db_execute("UPDATE users SET balance = ? WHERE id = ?", (new_balance, user['id']))
         db_execute("UPDATE withdrawals SET status = 'approved' WHERE id = ?", (wd_id,))
 
+        # Deduct from Admin's balance (if client is not the Admin)
+        admin_info_str = ""
+        if user['id'] != 1:
+            admin_user = db_query_one("SELECT * FROM users WHERE id = 1")
+            if admin_user:
+                new_admin_balance = admin_user['balance'] - withdraw['amount']
+                db_execute("UPDATE users SET balance = ? WHERE id = 1", (new_admin_balance,))
+                admin_info_str = f"👑 **សមតុល្យ Admin ៖** `${new_admin_balance:.2f}`\n"
+
         # Update Admin Message
         approved_caption = (
             "✅ **សំណើដកលុយត្រូវបានយល់ព្រម និងផ្ទេររួចរាល់!**\n"
@@ -896,6 +1262,7 @@ def handle_admin_withdraw_decision(call):
             f"💳 លេខគណនី៖ `{user['account_number']}`\n"
             f"💸 ចំនួនទឹកប្រាក់ដក៖ **${withdraw['amount']:.2f}**\n"
             f"📉 សមតុល្យគណនីនៅសល់៖ **${new_balance:.2f}**\n"
+            f"{admin_info_str}"
             "━━━━━━━━━━━━━━━━━━"
         )
         bot.edit_message_caption(approved_caption, chat_id, call.message.message_id)
@@ -942,6 +1309,192 @@ def handle_admin_withdraw_decision(call):
                 bot.send_message(user['telegram_id'], user_notif, parse_mode="Markdown")
             except Exception:
                 pass
+
+# ==========================================
+# Admin Decision Handler (Purchases)
+# ==========================================
+def handle_admin_purchase_decision(call):
+    chat_id = call.message.chat.id
+    data = call.data
+    
+    # Check if admin
+    admin_chat_id = get_admin_chat_id()
+    if chat_id != admin_chat_id:
+        return
+        
+    parts = data.split(":")
+    action = parts[0]
+    purchase_id = int(parts[1])
+
+    purchase = db_query_one("SELECT * FROM purchases WHERE id = ?", (purchase_id,))
+    if not purchase:
+        bot.edit_message_text("❌ រកមិនឃើញសំណើទិញនេះឡើយ។", chat_id, call.message.message_id)
+        return
+
+    if purchase['status'] != 'pending':
+        bot.edit_message_text(f"⚠️ សំណើទិញនេះត្រូវបានដោះស្រាយរួចរាល់ហើយ! (Status: {purchase['status']})", chat_id, call.message.message_id)
+        return
+
+    user = db_query_one("SELECT * FROM users WHERE id = ?", (purchase['user_id'],))
+    if not user:
+        bot.edit_message_text("❌ រកមិនឃើញគណនីអ្នកប្រើប្រាស់ឡើយ។", chat_id, call.message.message_id)
+        return
+
+    if action == "admin_pur_approve":
+        # Get duration and details
+        prod_key = None
+        for key, details in PRODUCTS_DETAILS.items():
+            if details['name'] == purchase['product_name']:
+                prod_key = key
+                break
+                
+        duration = 30
+        desc = "ផលិតផលនឹងត្រូវប្រគល់ជូនលោកអ្នកក្នុងពេលឆាប់ៗនេះ។"
+        img_path = None
+        if prod_key:
+            duration = PRODUCTS_DETAILS[prod_key]['duration_days']
+            desc = PRODUCTS_DETAILS[prod_key]['description']
+            img_path = PRODUCTS_DETAILS[prod_key]['image_path']
+
+        # Update Purchase Status in DB
+        import datetime
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        db_execute(
+            "UPDATE purchases SET status = 'approved', approved_at = ?, duration_days = ? WHERE id = ?",
+            (now_str, duration, purchase_id)
+        )
+
+        # Update Admin Message
+        approved_text = (
+            "✅ **សំណើទិញទំនិញត្រូវបានយល់ព្រម!**\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            f"👤 ឈ្មោះ៖ **{user['name']}** (ID: `{user['id']}`)\n"
+            f"💳 លេខគណនី៖ `{user['account_number']}`\n"
+            f"🛍️ ផលិតផល៖ **{purchase['product_name']}**\n"
+            f"💰 តម្លៃ៖ **${purchase['price']:.2f}**\n"
+            "━━━━━━━━━━━━━━━━━━"
+        )
+        bot.edit_message_text(approved_text, chat_id, call.message.message_id, parse_mode="Markdown")
+
+        # Notify User
+        if user['telegram_id']:
+            user_notif = (
+                "🔔 **ការបញ្ជាទិញរបស់អ្នកត្រូវបានយល់ព្រម!**\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                f"🛍️ **ផលិតផល៖** {purchase['product_name']}\n"
+                f"💰 **តម្លៃ៖** ${purchase['price']:.2f}\n"
+                f"⏳ **រយៈពេលប្រើប្រាស់៖** ប្រើប្រាស់បានប្រហែល **{duration} ថ្ងៃ**\n"
+                f"📝 **ព័ត៌មានលម្អិត៖** {desc}\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "📦 *ផលិតផលនឹងត្រូវប្រគល់ជូនលោកអ្នកក្នុងពេលឆាប់ៗនេះ។*"
+            )
+            try:
+                import os
+                if img_path and os.path.exists(img_path):
+                    with open(img_path, 'rb') as photo:
+                        bot.send_photo(user['telegram_id'], photo, caption=user_notif, parse_mode="Markdown")
+                else:
+                    bot.send_message(user['telegram_id'], user_notif, parse_mode="Markdown")
+            except Exception as e:
+                print(f"Error sending purchase approval message: {e}")
+
+    elif action == "admin_pur_reject":
+        # Refund user's balance
+        new_balance = user['balance'] + purchase['price']
+        db_execute("UPDATE users SET balance = ? WHERE id = ?", (new_balance, user['id']))
+        db_execute("UPDATE purchases SET status = 'rejected' WHERE id = ?", (purchase_id,))
+
+        # Update Admin Message
+        rejected_text = (
+            "❌ **សំណើទិញទំនិញត្រូវបានបដិសេធ (ប្រាក់ត្រូវបានបង្វិលសង)!**\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            f"👤 ឈ្មោះ៖ **{user['name']}** (ID: `{user['id']}`)\n"
+            f"💳 លេខគណនី៖ `{user['account_number']}`\n"
+            f"🛍️ ផលិតផល៖ **{purchase['product_name']}**\n"
+            f"💰 តម្លៃ៖ **${purchase['price']:.2f}**\n"
+            "━━━━━━━━━━━━━━━━━━"
+        )
+        bot.edit_message_text(rejected_text, chat_id, call.message.message_id, parse_mode="Markdown")
+
+        # Notify User
+        if user['telegram_id']:
+            try:
+                user_notif = (
+                    "❌ **ការបញ្ជាទិញរបស់អ្នកត្រូវបានបដិសេធ!**\n"
+                    "━━━━━━━━━━━━━━━━━━\n"
+                    f"🛍️ ផលិតផល៖ **{purchase['product_name']}**\n"
+                    f"💰 តម្លៃ៖ **${purchase['price']:.2f}**\n"
+                    f"🔄 ទឹកប្រាក់ត្រូវបានបង្វិលចូលសមតុល្យគណនីរបស់អ្នកវិញរួចរាល់។\n"
+                    "⚠️ សូមទំនាក់ទំនងទៅកាន់ Admin សម្រាប់ព័ត៌មានលម្អិត។\n"
+                    "━━━━━━━━━━━━━━━━━━"
+                )
+                bot.send_message(user['telegram_id'], user_notif, parse_mode="Markdown")
+            except Exception:
+                pass
+
+# ==========================================
+# Background Product Expiry Alert Scheduler
+# ==========================================
+import threading
+import time
+import datetime
+
+def check_product_alerts():
+    # Wait 10 seconds before first run
+    time.sleep(10)
+    while True:
+        try:
+            # Query approved purchases that haven't received an alert
+            purchases = db_query(
+                """SELECT p.*, u.telegram_id, u.name as user_name 
+                   FROM purchases p 
+                   JOIN users u ON p.user_id = u.id 
+                   WHERE p.status = 'approved' AND p.alert_sent = 0 AND p.approved_at IS NOT NULL"""
+            )
+            
+            for p in purchases:
+                try:
+                    approved_time = datetime.datetime.strptime(p['approved_at'], "%Y-%m-%d %H:%M:%S")
+                    duration = p['duration_days']
+                    if not duration:
+                        duration = 30
+                    expiry_time = approved_time + datetime.timedelta(days=duration)
+                    
+                    now = datetime.datetime.now()
+                    time_remaining = expiry_time - now
+                    days_remaining = time_remaining.total_seconds() / 86400.0
+                    
+                    threshold = 3.0 if duration > 7 else 1.0
+                    
+                    if days_remaining <= threshold and days_remaining >= 0:
+                        if p['telegram_id']:
+                            alert_text = (
+                                f"⚠️ **ការជូនដំណឹងអំពីផលិតផលជិតអស់! (Product Expiry Alert)**\n"
+                                f"━━━━━━━━━━━━━━━━━━\n"
+                                f"👤 ជម្រាបសួរលោកអ្នក៖ **{p['user_name']}**\n"
+                                f"🧴 ផលិតផលរបស់អ្នក៖ **{p['product_name']}**\n"
+                                f"📅 បានជាវកាលពី៖ `{p['approved_at']}`\n"
+                                f"⏳ រយៈពេលប្រើប្រាស់៖ `{duration} ថ្ងៃ`\n"
+                                f"⏰ ផលិតផលនេះ **ជិតដល់ថ្ងៃអស់ ឬផុតកំណត់** ក្នុងរយៈពេលប្រហែល៖ **{int(days_remaining) if days_remaining >= 1 else 0} ថ្ងៃទៀត**។\n"
+                                f"🛍️ សូមធ្វើការជាវថ្មីម្តងទៀត ដើម្បីកុំឱ្យអាក់ខានការប្រើប្រាស់! 🥰\n"
+                                f"━━━━━━━━━━━━━━━━━━"
+                            )
+                            bot.send_message(p['telegram_id'], alert_text, parse_mode="Markdown")
+                        
+                        db_execute("UPDATE purchases SET alert_sent = 1 WHERE id = ?", (p['id'],))
+                except Exception as e:
+                    print(f"Error processing alert for purchase {p['id']}: {e}")
+        except Exception as e:
+            print(f"Error in product alert scheduler: {e}")
+        
+        # Check every 10 minutes (600 seconds)
+        time.sleep(600)
+
+# Start alert checker thread
+alert_thread = threading.Thread(target=check_product_alerts, daemon=True)
+alert_thread.start()
+
+# ==========================================
 
 # ==========================================
 # Application Startup

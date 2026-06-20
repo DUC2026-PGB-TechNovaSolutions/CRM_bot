@@ -7,7 +7,7 @@ Players interact with the bot directly via Telegram, while platform administrato
 ---
 
 ## 🚀 Quick Links
-* **Live Bot:** [@bhk88gameonline_bot](https://t.me/shopperkh_bot)
+* **Live Bot:** [@shopperkh_bot](https://t.me/shopperkh_bot)
 * **Project Board:** [GitHub Project Board](https://github.com/orgs/DUC2026-PGB-TechNovaSolutions/projects/1)
 * **Team Organization:** [GitHub Organization](https://github.com/DUC2026-PGB-TechNovaSolutions)
 

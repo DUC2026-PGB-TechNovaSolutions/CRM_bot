@@ -1525,6 +1525,28 @@ alert_thread = threading.Thread(target=check_product_alerts, daemon=True)
 alert_thread.start()
 
 # ==========================================
+# Flask Web Server for Render Deployment (keep_alive)
+# ==========================================
+from flask import Flask
+import logging
+
+flask_app = Flask(__name__)
+
+# Suppress Flask default request logging to keep console logs clean
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
+
+@flask_app.route('/')
+def home():
+    return "Bot is healthy and running!"
+
+def keep_alive():
+    try:
+        port = int(os.getenv("PORT", "8080"))
+        print(f"Flask keep_alive server starting on port {port}...")
+        flask_app.run(host='0.0.0.0', port=port)
+    except Exception as e:
+        print(f"Warning: Failed to start keep_alive server: {e}")
 
 # ==========================================
 # Application Startup
@@ -1540,6 +1562,10 @@ if __name__ == '__main__':
     else:
         print("Warning: ADMIN_CHAT_ID is not configured in .env yet.")
         
+    # Start Flask keep_alive server on a background thread for Render
+    health_thread = threading.Thread(target=keep_alive, daemon=True)
+    health_thread.start()
+
     print("Telegram Bot is running...")
     # Start polling
     bot.infinity_polling()

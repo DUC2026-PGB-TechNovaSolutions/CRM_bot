@@ -8,14 +8,24 @@ from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv(override=True)
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-DB_PATH = os.getenv("DB_PATH", "bot.db")
-ADMIN_KHQR_PATH = os.getenv("ADMIN_KHQR_PATH", "adminkhqr.png")
 
-# Verify token
-if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
-    print("Error: TELEGRAM_BOT_TOKEN is not configured in .env file!")
-    print("Please set your token and restart the bot.")
+import re
+
+# Sanitize environment inputs to fall back to defaults if placeholders are present
+raw_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+BOT_TOKEN = None if not raw_token or "your bot token" in raw_token.lower() or "your_bot_token" in raw_token.lower() else raw_token
+
+raw_db_path = os.getenv("DB_PATH", "bot.db").strip()
+DB_PATH = "bot.db" if not raw_db_path or "your bot db" in raw_db_path.lower() or "your_bot_db" in raw_db_path.lower() else raw_db_path
+
+raw_khqr_path = os.getenv("ADMIN_KHQR_PATH", "adminkhqr.png").strip()
+ADMIN_KHQR_PATH = "adminkhqr.png" if not raw_khqr_path or "your admin qr" in raw_khqr_path.lower() or "your_admin_qr" in raw_khqr_path.lower() else raw_khqr_path
+
+# Verify token format
+token_pattern = re.compile(r'^\d+:[a-zA-Z0-9_-]+$')
+if not BOT_TOKEN or not token_pattern.match(BOT_TOKEN):
+    print("Error: TELEGRAM_BOT_TOKEN is not configured or is invalid in .env file!")
+    print("Please set your valid Telegram Bot Token and restart the bot.")
     import sys
     sys.exit(1)
 
@@ -1140,6 +1150,15 @@ def handle_admin_deposit_decision(call):
         db_execute("UPDATE users SET balance = ? WHERE id = ?", (new_balance, user['id']))
         db_execute("UPDATE deposits SET status = 'approved' WHERE id = ?", (dep_id,))
 
+        # Update Admin's balance (double-entry addition of physical deposit cash if client is not the Admin)
+        admin_info_str = ""
+        if user['id'] != 1:
+            admin_user = db_query_one("SELECT * FROM users WHERE id = 1")
+            if admin_user:
+                new_admin_balance = admin_user['balance'] + deposit['amount']
+                db_execute("UPDATE users SET balance = ? WHERE id = 1", (new_admin_balance,))
+                admin_info_str = f"👑 **សមតុល្យ Admin ៖** `${new_admin_balance:.2f}`\n"
+
         # Update Admin Message
         approved_caption = (
             "✅ **សំណើដាក់លុយត្រូវបានយល់ព្រម!**\n"
@@ -1150,6 +1169,7 @@ def handle_admin_deposit_decision(call):
             f"🎁 ប្រាក់បន្ថែម៖ **+${deposit['bonus_amount']:.2f}**\n"
             f"💵 ទឹកប្រាក់សរុបបញ្ចូល៖ **${added_amount:.2f}**\n"
             f"📈 សមតុល្យគណនីថ្មី៖ **${new_balance:.2f}**\n"
+            f"{admin_info_str}"
             "━━━━━━━━━━━━━━━━━━"
         )
         bot.edit_message_caption(approved_caption, chat_id, call.message.message_id)
@@ -1364,6 +1384,15 @@ def handle_admin_purchase_decision(call):
             (now_str, duration, purchase_id)
         )
 
+        # Update Admin's balance (double-entry addition of product price if client is not the Admin)
+        admin_info_str = ""
+        if user['id'] != 1:
+            admin_user = db_query_one("SELECT * FROM users WHERE id = 1")
+            if admin_user:
+                new_admin_balance = admin_user['balance'] + purchase['price']
+                db_execute("UPDATE users SET balance = ? WHERE id = 1", (new_admin_balance,))
+                admin_info_str = f"👑 **សមតុល្យ Admin ៖** `${new_admin_balance:.2f}`\n"
+
         # Update Admin Message
         approved_text = (
             "✅ **សំណើទិញទំនិញត្រូវបានយល់ព្រម!**\n"
@@ -1372,6 +1401,7 @@ def handle_admin_purchase_decision(call):
             f"💳 លេខគណនី៖ `{user['account_number']}`\n"
             f"🛍️ ផលិតផល៖ **{purchase['product_name']}**\n"
             f"💰 តម្លៃ៖ **${purchase['price']:.2f}**\n"
+            f"{admin_info_str}"
             "━━━━━━━━━━━━━━━━━━"
         )
         bot.edit_message_text(approved_text, chat_id, call.message.message_id, parse_mode="Markdown")

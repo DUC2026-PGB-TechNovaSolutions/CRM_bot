@@ -1,13 +1,13 @@
-# 🤖 BHK88 Gaming Platform - Deposit, Withdrawal & CRM Bot
+# 🤖 shopper bot  Platform - Deposit, Withdrawal & CRM Bot
 
-Welcome to the **BHK88 Gaming Platform Telegram Bot** repository. This bot is developed as an automated solution to streamline customer registration, manage player wallets, track referral bonuses, and secure deposit/withdrawal transaction verifications.
+Welcome to the **shopper bot Platform Telegram Bot** repository. This bot is developed as an automated solution to streamline customer registration, manage player wallets, track referral bonuses, and secure deposit/withdrawal transaction verifications.
 
 Players interact with the bot directly via Telegram, while platform administrators receive and approve transaction requests in real time from a dedicated admin chat.
 
 ---
 
 ## 🚀 Quick Links
-* **Live Bot:** [@bhk88gameonline_bot](https://t.me/bhk88gameonline_bot)
+* **Live Bot:** [@shopperkh_bot](https://t.me/shopperkh_bot)
 * **Project Board:** [GitHub Project Board](https://github.com/orgs/DUC2026-PGB-TechNovaSolutions/projects/1)
 * **Team Organization:** [GitHub Organization](https://github.com/DUC2026-PGB-TechNovaSolutions)
 
